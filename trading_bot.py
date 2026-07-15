@@ -4,10 +4,12 @@ import requests
 import time
 import csv
 from datetime import datetime
+import pytz
+import os
 
 # ================= TELEGRAM =================
-TOKEN = "8717830004:AAEKMFUHs9mV4c0mrYalmX6zmuJ3knKcnBo"
-CHAT_ID = "538248415"
+TOKEN = os.getenv("8717830004:AAEKMFUHs9mV4c0mrYalmX6zmuJ3knKcnBo")
+CHAT_ID = os.getenv("538248415")
 
 def send_telegram(msg):
     try:
@@ -16,177 +18,204 @@ def send_telegram(msg):
     except:
         print("Telegram Error")
 
-# ================= SYMBOLS =================
+# ================= TIME =================
+india = pytz.timezone('Asia/Kolkata')
 
-# NIFTY 50
-nifty50 = [
-"RELIANCE.NS","TCS.NS","HDFCBANK.NS","INFY.NS","ICICIBANK.NS","SBIN.NS",
-"ITC.NS","LT.NS","AXISBANK.NS","KOTAKBANK.NS","HCLTECH.NS","ASIANPAINT.NS",
-"MARUTI.NS","SUNPHARMA.NS","TITAN.NS","ULTRACEMCO.NS","NESTLEIND.NS",
-"BAJFINANCE.NS","BAJAJFINSV.NS","POWERGRID.NS","NTPC.NS","ONGC.NS",
-"TATAMOTORS.NS","M&M.NS","WIPRO.NS","TECHM.NS","INDUSINDBK.NS",
-"ADANIENT.NS","ADANIPORTS.NS","COALINDIA.NS","JSWSTEEL.NS","TATASTEEL.NS",
-"HINDALCO.NS","GRASIM.NS","BRITANNIA.NS","EICHERMOT.NS","HEROMOTOCO.NS",
-"CIPLA.NS","DRREDDY.NS","APOLLOHOSP.NS","DIVISLAB.NS","SBILIFE.NS",
-"HDFCLIFE.NS","ICICIPRULI.NS","BAJAJ-AUTO.NS","SHREECEM.NS","UPL.NS",
-"BPCL.NS","IOC.NS"
-]
+def now_ist():
+    return datetime.now(india)
 
-# BANKNIFTY
-banknifty = [
-"HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS",
-"SBIN.NS","INDUSINDBK.NS","BANDHANBNK.NS","FEDERALBNK.NS",
-"PNB.NS","IDFCFIRSTB.NS","AUBANK.NS","BANKBARODA.NS"
-]
+# ================= MARKET TIME =================
+def is_market_open():
+    now = now_ist()
+    if now.weekday() >= 5:
+        return False
 
-# INDEX
-index_symbols = ["^NSEI", "^NSEBANK"]
+    start = now.replace(hour=9, minute=30)
+    end = now.replace(hour=15, minute=30)
 
-# COMBINED
-symbols = list(set(nifty50 + banknifty + index_symbols))
+    return start <= now <= end
 
-# ================= SAFE VALUE =================
-def safe_value(x):
-    try:
-        if isinstance(x, pd.Series):
-            return float(x.iloc[-1])
-        return float(x)
-    except:
-        return 0
+# ================= 15 MIN CLOSE =================
+def is_candle_close():
+    now = now_ist()
+    return now.minute % 15 == 0 and now.second < 5
 
-# ================= RSI =================
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
-    rs = gain / loss
+# ================= RSI (TradingView Style) =================
+def rsi_tv(close, period=14):
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
+    rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-# ================= VWAP =================
-def calculate_vwap(df):
-    tp = (df["High"] + df["Low"] + df["Close"]) / 3
-    vp = tp * df["Volume"]
-    return vp.cumsum() / df["Volume"].cumsum()
+# ================= SYMBOLS =================
+symbols = [
+"RELIANCE.NS","TCS.NS","HDFCBANK.NS","INFY.NS","ICICIBANK.NS",
+"HINDUNILVR.NS","ITC.NS","SBIN.NS","BHARTIARTL.NS","KOTAKBANK.NS",
+"LT.NS","AXISBANK.NS","ASIANPAINT.NS","MARUTI.NS","SUNPHARMA.NS",
+"TITAN.NS","ULTRACEMCO.NS","NESTLEIND.NS","WIPRO.NS","TECHM.NS",
+"POWERGRID.NS","NTPC.NS","BAJFINANCE.NS","BAJAJFINSV.NS","HCLTECH.NS",
+"ONGC.NS","JSWSTEEL.NS","TATASTEEL.NS","INDUSINDBK.NS","ADANIENT.NS",
+"ADANIPORTS.NS","COALINDIA.NS","BRITANNIA.NS","EICHERMOT.NS","HEROMOTOCO.NS",
+"DIVISLAB.NS","DRREDDY.NS","CIPLA.NS","GRASIM.NS","APOLLOHOSP.NS",
+"BAJAJ-AUTO.NS","BPCL.NS","HDFCLIFE.NS","SBILIFE.NS","ICICIPRULI.NS",
+"TATACONSUM.NS","UPL.NS","SHREECEM.NS","M&M.NS","LTIM.NS",
 
-# ================= VOLUME =================
-def get_volume_strength(df):
-    if "Volume" not in df:
-        return 0
-    vol = df["Volume"]
-    if isinstance(vol, pd.DataFrame):
-        vol = vol.iloc[:, 0]
+# BANKNIFTY
+"HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS",
+"SBIN.NS","INDUSINDBK.NS","BANDHANBNK.NS","FEDERALBNK.NS",
+"PNB.NS","IDFCFIRSTB.NS","AUBANK.NS","BANKBARODA.NS",
 
-    current = safe_value(vol.iloc[-2])
-    avg = vol.tail(20).mean()
+# INDEX
+"^NSEI","^NSEBANK"
+]
 
-    if avg == 0:
-        return 0
-
-    return round(current / avg, 2)
-
-# ================= TRADE LOG =================
-def log_trade(symbol, strategy, price):
-    with open("trade_log.csv", "a", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([datetime.now(), symbol, strategy, price])
-
-# ================= MEMORY =================
+# ================= STORAGE =================
+open_trades = {}
 last_signal = {}
 
-# ================= MAIN BOT =================
+# ================= TRADE LOG =================
+def log_trade(symbol, trade_type, entry, exit_price, pnl, result):
+    file = "trade_log.csv"
+
+    file_exists = False
+    try:
+        with open(file, "r"):
+            file_exists = True
+    except:
+        pass
+
+    with open(file, "a", newline="") as f:
+        writer = csv.writer(f)
+
+        if not file_exists:
+            writer.writerow(["Time","Symbol","Type","Entry","Exit","PnL","Result"])
+
+        writer.writerow([
+            datetime.now(),
+            symbol,
+            trade_type,
+            round(entry,2),
+            round(exit_price,2),
+            round(pnl,2),
+            result
+        ])
+
+# ================= ENTRY =================
 def run_bot():
-    global last_signal
+    global open_trades
 
     for symbol in symbols:
         try:
-            print(f"Checking {symbol}...")
-
-            df = yf.download(symbol, interval="15m", period="5d", progress=False)
-
-            if df.empty:
-                continue
-
+            df = yf.download(symbol, interval="15m", period="3d", progress=False, threads=False)
             df = df.dropna()
 
             close = df["Close"]
-            if isinstance(close, pd.DataFrame):
-                close = close.iloc[:, 0]
+            rsi15 = rsi_tv(close)
 
-            # ===== RSI =====
-            rsi15 = calculate_rsi(close)
+            df1h = df.resample("1h").last().dropna()
+            rsi1h = rsi_tv(df1h["Close"])
 
-            df_1h = df.resample("1h").last().dropna()
-            close_1h = df_1h["Close"]
+            rsi15_latest = float(rsi15.iloc[-2])
+            rsi15_prev = float(rsi15.iloc[-3])
+            rsi1h_latest = float(rsi1h.iloc[-1])
+            price = float(close.iloc[-2])
 
-            if isinstance(close_1h, pd.DataFrame):
-                close_1h = close_1h.iloc[:, 0]
+            signal = None
 
-            rsi1h = calculate_rsi(close_1h)
-
-            if len(rsi15) < 30 or len(rsi1h) < 20:
-                continue
-
-            # ===== CLOSED CANDLE VALUES =====
-            rsi15_latest = safe_value(rsi15.iloc[-2])
-            rsi15_prev = safe_value(rsi15.iloc[-3])
-            rsi1h_latest = safe_value(rsi1h.iloc[-1])
-
-            price = safe_value(close.iloc[-2])
-
-            vwap_series = calculate_vwap(df)
-            vwap = safe_value(vwap_series.iloc[-2])
-
-            volume = get_volume_strength(df)
-
-            strategy = None
-
-            # ===== RSI 60 CONFIRMED =====
+            # ===== YOUR STRATEGY =====
             if rsi1h_latest > 60 and rsi15_prev < 60 and rsi15_latest > 60:
-                strategy = "BUY_RSI60_CONFIRMED"
+                signal = "BUY"
 
             elif rsi1h_latest < 60 and rsi15_prev > 40 and rsi15_latest < 40:
-                strategy = "SELL_RSI40_CONFIRMED"
+                signal = "SELL"
 
-            # ===== EXECUTION =====
-            if strategy and last_signal.get(symbol) != strategy:
+            if signal and symbol not in open_trades and last_signal.get(symbol) != signal:
 
-                if "BUY" in strategy:
-                    sl = price * 0.98
-                    target = price * 1.04
-                else:
-                    sl = price * 1.02
-                    target = price * 0.96
+                open_trades[symbol] = {
+                    "type": signal,
+                    "entry": price
+                }
 
-                msg = (
-                    f"🚨 {strategy}\n\n"
-                    f"📊 {symbol}\n"
-                    f"💰 Price: {round(price,2)}\n\n"
-                    f"📉 RSI 1H: {round(rsi1h_latest,2)}\n"
-                    f"📉 RSI 15m Prev: {round(rsi15_prev,2)}\n"
-                    f"📉 RSI 15m Closed: {round(rsi15_latest,2)}\n\n"
-                    f"📊 VWAP: {round(vwap,2)}\n"
-                    f"📦 Volume: {volume}x\n\n"
-                    f"🎯 SL: {round(sl,2)}\n"
-                    f"🚀 Target: {round(target,2)}"
-                )
-
-                print(msg)
+                msg = f"🚨 {signal} {symbol}\nPrice: {price}\nRSI Prev: {round(rsi15_prev,2)}\nRSI Close: {round(rsi15_latest,2)}"
                 send_telegram(msg)
-                log_trade(symbol, strategy, price)
 
-                last_signal[symbol] = strategy
+                last_signal[symbol] = signal
 
         except Exception as e:
-            print(f"Error {symbol}: {e}")
+            print(symbol, e)
 
-# ================= LOOP =================
-print("🚀 FULL MARKET BOT STARTED")
+# ================= EXIT =================
+def check_exit():
+    global open_trades
 
-try:
-    while True:
-        run_bot()
-        print("⏳ Next scan in 60 sec...\n")
-        time.sleep(60)
+    for symbol in list(open_trades.keys()):
+        try:
+            df = yf.download(symbol, interval="15m", period="3d", progress=False, threads=False)
+            df = df.dropna()
 
-except KeyboardInterrupt:
-    print("🛑 Bot stopped")
+            close = df["Close"]
+            rsi15 = rsi_tv(close)
+
+            rsi_closed = float(rsi15.iloc[-2])
+            price = float(close.iloc[-2])
+
+            trade = open_trades[symbol]
+
+            if trade["type"] == "BUY" and rsi_closed < 60:
+                pnl = price - trade["entry"]
+                result = "WIN" if pnl > 0 else "LOSS"
+
+                send_telegram(f"❌ EXIT BUY {symbol} @ {price} | P&L: {round(pnl,2)}")
+                log_trade(symbol, "BUY", trade["entry"], price, pnl, result)
+                del open_trades[symbol]
+
+            elif trade["type"] == "SELL" and rsi_closed > 40:
+                pnl = trade["entry"] - price
+                result = "WIN" if pnl > 0 else "LOSS"
+
+                send_telegram(f"❌ EXIT SELL {symbol} @ {price} | P&L: {round(pnl,2)}")
+                log_trade(symbol, "SELL", trade["entry"], price, pnl, result)
+                del open_trades[symbol]
+
+        except Exception as e:
+            print("Exit error:", symbol, e)
+
+# ================= MORNING NEWS =================
+news_sent = False
+
+def send_morning_news():
+    try:
+        msg = "📰 MARKET OPEN UPDATE\nTrade Safe Today"
+        send_telegram(msg)
+    except:
+        pass
+
+# ================= MAIN =================
+print("🚀 FINAL BOT STARTED")
+
+last_run = None
+
+while True:
+    now = now_ist()
+
+    if now.hour == 8 and now.minute == 30 and not news_sent:
+        send_morning_news()
+        news_sent = True
+
+    if now.hour == 0:
+        news_sent = False
+
+    if is_market_open() and is_candle_close():
+
+        if last_run != now.minute:
+            run_bot()
+            check_exit()
+            last_run = now.minute
+
+        time.sleep(5)
+
+    else:
+        time.sleep(30)
