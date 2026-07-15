@@ -18,6 +18,16 @@ def send_telegram(msg):
     except:
         print("Telegram Error")
 
+# ===== SEND CSV TO TELEGRAM =====
+def send_csv():
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/sendDocument"
+        files = {'document': open('trade_log.csv', 'rb')}
+        data = {'chat_id': CHAT_ID}
+        requests.post(url, files=files, data=data)
+    except Exception as e:
+        print("CSV send error:", e)
+
 # ================= TIME =================
 india = pytz.timezone('Asia/Kolkata')
 
@@ -40,7 +50,7 @@ def is_candle_close():
     now = now_ist()
     return now.minute % 15 == 0 and now.second < 5
 
-# ================= RSI (TradingView Style) =================
+# ================= RSI =================
 def rsi_tv(close, period=14):
     delta = close.diff()
     gain = delta.clip(lower=0)
@@ -125,7 +135,6 @@ def run_bot():
 
             signal = None
 
-            # ===== YOUR STRATEGY =====
             if rsi1h_latest > 60 and rsi15_prev < 60 and rsi15_latest > 60:
                 signal = "BUY"
 
@@ -185,11 +194,11 @@ def check_exit():
 
 # ================= MORNING NEWS =================
 news_sent = False
+csv_sent_today = False
 
 def send_morning_news():
     try:
-        msg = "📰 MARKET OPEN UPDATE\nTrade Safe Today"
-        send_telegram(msg)
+        send_telegram("📰 MARKET OPEN UPDATE\nTrade Safe Today")
     except:
         pass
 
@@ -201,13 +210,21 @@ last_run = None
 while True:
     now = now_ist()
 
+    # Morning message
     if now.hour == 8 and now.minute == 30 and not news_sent:
         send_morning_news()
         news_sent = True
 
     if now.hour == 0:
         news_sent = False
+        csv_sent_today = False
 
+    # Send CSV at 3:35 PM
+    if now.hour == 15 and now.minute == 35 and not csv_sent_today:
+        send_csv()
+        csv_sent_today = True
+
+    # Run bot
     if is_market_open() and is_candle_close():
 
         if last_run != now.minute:
