@@ -214,33 +214,36 @@ last_run = None
 
 while True:
     try:
-    now = now_ist()
+        now = now_ist()
 
-    # NEWS WINDOW FIX
-    if now.hour == 8 and 30 <= now.minute <= 35 and not news_sent:
-        send_news()
-        news_sent = True
+        # MORNING NEWS (SAFE WINDOW)
+        if now.hour == 8 and 30 <= now.minute <= 35 and not news_sent:
+            send_news()
+            news_sent = True
 
-    # RESET DAILY
-    if now.hour == 0:
-        news_sent = False
-        csv_sent = False
+        # RESET DAILY FLAGS
+        if now.hour == 0:
+            news_sent = False
+            csv_sent = False
 
-    # SEND CSV
-    if now.hour == 15 and 35 <= now.minute <= 40 and not csv_sent:
-        send_csv()
-        csv_sent = True
+        # SEND CSV
+        if now.hour == 15 and 35 <= now.minute <= 40 and not csv_sent:
+            send_csv()
+            csv_sent = True
 
-    if is_market_open() and is_candle_close():
+        # MAIN STRATEGY RUN
+        if is_market_open() and is_candle_close():
 
-        if last_run != now.minute:
-            run_bot()
-            check_exit()
-            last_run = now.minute
+            if last_run != now.minute:
+                run_bot()
+                check_exit()
+                last_run = now.minute
 
-        time.sleep(5)
-    else:
-        time.sleep(20)
+            time.sleep(5)
+
+        else:
+            time.sleep(20)
+
     except Exception as e:
         print("MAIN LOOP ERROR:", e)
         time.sleep(10)
