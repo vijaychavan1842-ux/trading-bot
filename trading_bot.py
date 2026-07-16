@@ -112,11 +112,10 @@ def send_morning_news():
 • Profit booking possible
 
 🎯 IMPACT
-• Gap Up → Buy on breakout
-• Gap Down → Sell on breakdown
-• Sideways → Avoid overtrading
+• Gap Up → Buy breakout
+• Gap Down → Sell breakdown
+• Sideways → Avoid trades
 """
-
     send_telegram(msg)
 
 # ================= SYMBOLS =================
@@ -131,29 +130,27 @@ symbols = [
 "DIVISLAB.NS","DRREDDY.NS","CIPLA.NS","GRASIM.NS","APOLLOHOSP.NS",
 "BAJAJ-AUTO.NS","BPCL.NS","HDFCLIFE.NS","SBILIFE.NS","ICICIPRULI.NS",
 "TATACONSUM.NS","UPL.NS","SHREECEM.NS","M&M.NS","LTIM.NS",
-# BANK
 "HDFCBANK.NS","ICICIBANK.NS","AXISBANK.NS","KOTAKBANK.NS",
 "SBIN.NS","INDUSINDBK.NS","BANKBARODA.NS","PNB.NS",
-# INDEX
 "^NSEI","^NSEBANK"
 ]
 
 open_trades = {}
 
-# ================= TRADE LOG =================
+# ================= CSV =================
 def init_csv():
     if not os.path.exists("trade_log.csv"):
         with open("trade_log.csv", "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["Time","Symbol","Type","Entry","Exit","PnL","Reason"])
+            writer.writerow(["Time","Symbol","Type","Entry","SL","Exit","PnL","Reason"])
 
-def log_trade(symbol, ttype, entry, exit_price, pnl, reason):
+def log_trade(symbol, ttype, entry, sl, exit_price, pnl, reason):
     with open("trade_log.csv", "a", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
             datetime.now(), symbol, ttype,
-            round(entry,2), round(exit_price,2),
-            round(pnl,2), reason
+            round(entry,2), round(sl,2),
+            round(exit_price,2), round(pnl,2), reason
         ])
 
 # ================= ENTRY =================
@@ -215,19 +212,19 @@ def check_exit():
                 if low.iloc[-2] < sl:
                     pnl = price-entry
                     send_telegram(f"SL BUY {symbol} PnL:{round(pnl,2)}")
-                    log_trade(symbol,"BUY",entry,price,pnl,"SL")
+                    log_trade(symbol,"BUY",entry,sl,price,pnl,"SL")
                     del open_trades[symbol]
 
                 elif price >= entry*1.05:
                     pnl = price-entry
                     send_telegram(f"TARGET BUY {symbol} PnL:{round(pnl,2)}")
-                    log_trade(symbol,"BUY",entry,price,pnl,"TGT")
+                    log_trade(symbol,"BUY",entry,sl,price,pnl,"TGT")
                     del open_trades[symbol]
 
                 elif rsi_now < 60:
                     pnl = price-entry
                     send_telegram(f"RSI EXIT BUY {symbol} PnL:{round(pnl,2)}")
-                    log_trade(symbol,"BUY",entry,price,pnl,"RSI")
+                    log_trade(symbol,"BUY",entry,sl,price,pnl,"RSI")
                     del open_trades[symbol]
 
             else:
@@ -235,19 +232,19 @@ def check_exit():
                 if high.iloc[-2] > sl:
                     pnl = entry-price
                     send_telegram(f"SL SELL {symbol} PnL:{round(pnl,2)}")
-                    log_trade(symbol,"SELL",entry,price,pnl,"SL")
+                    log_trade(symbol,"SELL",entry,sl,price,pnl,"SL")
                     del open_trades[symbol]
 
                 elif price <= entry*0.95:
                     pnl = entry-price
                     send_telegram(f"TARGET SELL {symbol} PnL:{round(pnl,2)}")
-                    log_trade(symbol,"SELL",entry,price,pnl,"TGT")
+                    log_trade(symbol,"SELL",entry,sl,price,pnl,"TGT")
                     del open_trades[symbol]
 
                 elif rsi_now > 40:
                     pnl = entry-price
                     send_telegram(f"RSI EXIT SELL {symbol} PnL:{round(pnl,2)}")
-                    log_trade(symbol,"SELL",entry,price,pnl,"RSI")
+                    log_trade(symbol,"SELL",entry,sl,price,pnl,"RSI")
                     del open_trades[symbol]
 
         except Exception as e:
