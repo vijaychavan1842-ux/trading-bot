@@ -31,6 +31,8 @@ def send_telegram(msg):
 
     except Exception as e:
         print("Telegram Error:", e)
+        send_telegram("🔥 FINAL TEST MESSAGE")
+        
 def send_csv():
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendDocument"
