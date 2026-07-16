@@ -203,11 +203,17 @@ def send_news():
     send_telegram("📰 MARKET OPEN - BOT ACTIVE")
 
 # ================= MAIN =================
-send_telegram("✅ BOT STARTED SUCCESSFULLY")
+print("🚀 BOT STARTED")
+
+try:
+    send_telegram("✅ BOT STARTED SUCCESSFULLY")
+except Exception as e:
+    print("Startup Telegram failed:", e)
 
 last_run = None
 
 while True:
+    try:
     now = now_ist()
 
     # NEWS WINDOW FIX
@@ -235,5 +241,6 @@ while True:
         time.sleep(5)
     else:
         time.sleep(20)
-
-# restart trigger
+    except Exception as e:
+        print("MAIN LOOP ERROR:", e)
+        time.sleep(10)
