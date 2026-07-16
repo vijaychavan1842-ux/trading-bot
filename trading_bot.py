@@ -13,16 +13,24 @@ CHAT_ID = os.getenv("538248415")
 
 def send_telegram(msg):
     try:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        token = str(os.getenv("TOKEN")).strip()
+        chat_id = str(os.getenv("CHAT_ID")).strip()
+
+        print("TOKEN:", token)
+        print("CHAT_ID:", chat_id)
+
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+
         response = requests.post(
             url,
-            json={"chat_id": CHAT_ID, "text": msg},
+            json={"chat_id": chat_id, "text": msg},
             timeout=10
         )
-        print("Telegram Response:", response.text)
-    except Exception as e:
-        print("Telegram Failed:", e)
 
+        print("Telegram Response:", response.text)
+
+    except Exception as e:
+        print("Telegram Error:", e)
 def send_csv():
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendDocument"
