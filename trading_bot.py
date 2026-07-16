@@ -235,3 +235,5 @@ while True:
         time.sleep(5)
     else:
         time.sleep(20)
+
+# restart trigger
