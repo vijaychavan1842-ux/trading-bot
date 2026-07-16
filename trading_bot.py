@@ -8,7 +8,7 @@ import pytz
 import os
 
 # ================= TELEGRAM =================
-TOKEN = os.getenv("8717830004:AAEKMFUHs9mV4c0mrYalmX6zmuJ3knKcnBoKEN")
+TOKEN = os.getenv("8717830004:AAEKMFUHs9mV4c0mrYalmX6zmuJ3knKcnBo")
 CHAT_ID = os.getenv("538248415")
 
 def send_telegram(msg):
