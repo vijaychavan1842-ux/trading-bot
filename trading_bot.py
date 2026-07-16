@@ -23,6 +23,23 @@ def send_telegram(msg):
     except Exception as e:
         print("Telegram Error:", e)
 
+def send_csv():
+    try:
+        token = str(os.getenv("TOKEN")).strip()
+        chat_id = str(os.getenv("CHAT_ID")).strip()
+
+        url = f"https://api.telegram.org/bot{token}/sendDocument"
+
+        with open("trade_log.csv", "rb") as f:
+            files = {"document": f}
+            data = {"chat_id": chat_id}
+
+            response = requests.post(url, files=files, data=data, timeout=20)
+            print("CSV Sent:", response.text)
+
+    except Exception as e:
+        print("CSV SEND ERROR:", e)
+
 # ================= TIME =================
 india = pytz.timezone('Asia/Kolkata')
 
@@ -59,14 +76,13 @@ def get_global_data():
             "GIFT NIFTY": "^NSEI"
         }
 
-        msg = "🌍 GLOBAL MARKET UPDATE\n\n"
+        msg = "🌍 GLOBAL MARKET (POINT CHANGE)\n"
 
         for name, sym in symbols.items():
             df = yf.download(sym, period="2d", interval="1d", progress=False)
             change = df["Close"].iloc[-1] - df["Close"].iloc[-2]
             msg += f"{name}: {round(change,2)} pts\n"
 
-        # crude
         oil = yf.download("CL=F", period="2d", interval="1d", progress=False)
         oil_change = oil["Close"].iloc[-1] - oil["Close"].iloc[-2]
 
@@ -77,7 +93,6 @@ def get_global_data():
     except:
         return "Global data not available"
 
-# ================= NEWS MESSAGE =================
 def send_morning_news():
     global_data = get_global_data()
 
@@ -86,22 +101,20 @@ def send_morning_news():
 
 {global_data}
 
-🟢 POSITIVE FACTORS
-• Global market positive → bullish sentiment
-• Crude stable → inflation under control
-• Strong closing in US → gap up chances
+🟢 POSITIVE
+• Strong global cues → bullish
+• Stable crude → positive
+• Momentum continuation possible
 
-🔴 NEGATIVE FACTORS
-• Weak global cues → selling pressure
-• High crude → cost pressure
-• Profit booking expected
+🔴 NEGATIVE
+• Weak global → selling pressure
+• High crude → inflation risk
+• Profit booking possible
 
-🎯 PROBABLE IMPACT
-• Gap Up → look for BUY above resistance
-• Gap Down → look for SELL below support
-• Sideways → avoid overtrading
-
-🚀 BOT ACTIVE
+🎯 IMPACT
+• Gap Up → Buy on breakout
+• Gap Down → Sell on breakdown
+• Sideways → Avoid overtrading
 """
 
     send_telegram(msg)
@@ -128,6 +141,12 @@ symbols = [
 open_trades = {}
 
 # ================= TRADE LOG =================
+def init_csv():
+    if not os.path.exists("trade_log.csv"):
+        with open("trade_log.csv", "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["Time","Symbol","Type","Entry","Exit","PnL","Reason"])
+
 def log_trade(symbol, ttype, entry, exit_price, pnl, reason):
     with open("trade_log.csv", "a", newline="") as f:
         writer = csv.writer(f)
@@ -141,8 +160,7 @@ def log_trade(symbol, ttype, entry, exit_price, pnl, reason):
 def run_bot():
     for symbol in symbols:
         try:
-            df = yf.download(symbol, interval="15m", period="3d", progress=False)
-            df = df.dropna()
+            df = yf.download(symbol, interval="15m", period="3d", progress=False).dropna()
 
             close = df["Close"]
             low = df["Low"]
@@ -172,14 +190,13 @@ def run_bot():
                 send_telegram(f"SELL {symbol}\nEntry:{price}\nSL:{sl}")
 
         except Exception as e:
-            print("ENTRY ERROR:", e)
+            print("ENTRY ERROR:", symbol, e)
 
 # ================= EXIT =================
 def check_exit():
     for symbol in list(open_trades.keys()):
         try:
-            df = yf.download(symbol, interval="15m", period="3d", progress=False)
-            df = df.dropna()
+            df = yf.download(symbol, interval="15m", period="3d", progress=False).dropna()
 
             close = df["Close"]
             low = df["Low"]
@@ -234,13 +251,16 @@ def check_exit():
                     del open_trades[symbol]
 
         except Exception as e:
-            print("EXIT ERROR:", e)
+            print("EXIT ERROR:", symbol, e)
 
 # ================= MAIN =================
 print("🚀 BOT STARTED")
 send_telegram("✅ BOT LIVE")
 
+init_csv()
+
 news_sent = False
+csv_sent = False
 last_run = None
 
 while True:
@@ -252,8 +272,16 @@ while True:
             send_morning_news()
             news_sent = True
 
+        # RESET DAILY FLAGS
         if now.hour == 0:
             news_sent = False
+            csv_sent = False
+
+        # SEND CSV
+        if now.hour == 15 and 35 <= now.minute <= 45 and not csv_sent:
+            send_telegram("📊 Sending Trade Log...")
+            send_csv()
+            csv_sent = True
 
         if is_market_open() and is_candle_close():
 
