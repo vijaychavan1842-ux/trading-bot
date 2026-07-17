@@ -15,14 +15,26 @@ def send_telegram(msg):
         chat_id = str(os.getenv("CHAT_ID")).strip()
 
         url = f"https://api.telegram.org/bot{token}/sendMessage"
-
-        requests.post(url, json={
-            "chat_id": chat_id,
-            "text": msg
-        }, timeout=10)
+        requests.post(url, json={"chat_id": chat_id, "text": msg}, timeout=10)
 
     except Exception as e:
         print("Telegram Error:", e)
+
+def send_csv():
+    try:
+        token = str(os.getenv("TOKEN")).strip()
+        chat_id = str(os.getenv("CHAT_ID")).strip()
+
+        url = f"https://api.telegram.org/bot{token}/sendDocument"
+
+        with open("st_trade_log.csv", "rb") as f:
+            files = {"document": f}
+            data = {"chat_id": chat_id}
+            res = requests.post(url, files=files, data=data, timeout=20)
+            print("CSV Sent:", res.text)
+
+    except Exception as e:
+        print("CSV ERROR:", e)
 
 # ================= TIME =================
 india = pytz.timezone('Asia/Kolkata')
@@ -96,8 +108,8 @@ def log_trade(index, ttype, entry, sl, exit_price, pnl, reason):
             round(exit_price,2), round(pnl,2), reason
         ])
 
-# ================= ATM OPTION =================
-def get_atm_strike(price, step):
+# ================= ATM =================
+def get_atm(price, step):
     return round(price / step) * step
 
 # ================= ENTRY =================
@@ -111,47 +123,22 @@ def run_bot():
 
             price = close.iloc[-2]
             st_val = st.iloc[-2]
-
             diff = abs(price - st_val)
 
             if symbol in open_trades:
                 continue
 
-            # BUY CONDITION (price near ST from above)
             if price > st_val and diff <= threshold:
-                strike = get_atm_strike(price, 50)
-                open_trades[symbol] = {
-                    "type": "BUY",
-                    "entry": price,
-                    "sl": st_val,
-                    "strike": strike
-                }
+                strike = get_atm(price, 50)
+                open_trades[symbol] = {"type":"BUY","entry":price,"sl":st_val}
 
-                send_telegram(f"""
-BUY SIGNAL (CALL)
-Index: {symbol}
-Spot: {price}
-ST: {round(st_val,2)}
-ATM: {strike} CE
-""")
+                send_telegram(f"BUY CALL {symbol}\nSpot:{price}\nST:{round(st_val,2)}\nATM:{strike}")
 
-            # SELL CONDITION
             elif price < st_val and diff <= threshold:
-                strike = get_atm_strike(price, 50)
-                open_trades[symbol] = {
-                    "type": "SELL",
-                    "entry": price,
-                    "sl": st_val,
-                    "strike": strike
-                }
+                strike = get_atm(price, 50)
+                open_trades[symbol] = {"type":"SELL","entry":price,"sl":st_val}
 
-                send_telegram(f"""
-SELL SIGNAL (PUT)
-Index: {symbol}
-Spot: {price}
-ST: {round(st_val,2)}
-ATM: {strike} PE
-""")
+                send_telegram(f"SELL PUT {symbol}\nSpot:{price}\nST:{round(st_val,2)}\nATM:{strike}")
 
         except Exception as e:
             print("ENTRY ERROR:", e)
@@ -210,10 +197,21 @@ send_telegram("✅ SUPER TREND BOT LIVE")
 init_csv()
 
 last_run = None
+csv_sent = False
 
 while True:
     try:
         now = now_ist()
+
+        # CSV SEND AFTER MARKET
+        if now.hour == 15 and 35 <= now.minute <= 45 and not csv_sent:
+            send_telegram("📊 Sending ST Trade Log...")
+            send_csv()
+            csv_sent = True
+
+        # RESET DAILY FLAG
+        if now.hour == 0:
+            csv_sent = False
 
         if is_market_open() and is_candle_close():
 
