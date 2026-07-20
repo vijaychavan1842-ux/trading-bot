@@ -69,7 +69,7 @@ def log_trade(symbol, ttype, entry, sl, exit_price, pnl, reason):
         writer = csv.writer(f)
         writer.writerow([datetime.now(), symbol, ttype, entry, sl, exit_price, pnl, reason])
 
-# ================= ENTRY =================
+# ================= ENTRY (UPDATED OPTION C) =================
 def run_bot():
     for symbol, threshold in symbols.items():
         try:
@@ -78,23 +78,48 @@ def run_bot():
             close = df["Close"]
             st = supertrend(df)
 
-            price = close.iloc[-2]
-            st_val = st.iloc[-2]
+            prev_close = close.iloc[-2]
+            prev_st = st.iloc[-2]
 
-            diff = abs(price - st_val)
+            current_price = close.iloc[-1]   # live candle
+            diff = abs(current_price - prev_st)
 
             if symbol in open_trades:
                 continue
 
-            # BUY
-            if price > st_val and diff <= threshold:
-                open_trades[symbol] = {"type":"BUY","entry":price,"sl":st_val}
-                send_telegram(f"BUY {symbol}\nEntry:{price}\nST:{round(st_val,2)}")
+            # ================= BUY =================
+            if prev_close > prev_st and current_price <= prev_close:
 
-            # SELL
-            elif price < st_val and diff <= threshold:
-                open_trades[symbol] = {"type":"SELL","entry":price,"sl":st_val}
-                send_telegram(f"SELL {symbol}\nEntry:{price}\nST:{round(st_val,2)}")
+                if diff <= threshold:
+                    open_trades[symbol] = {
+                        "type": "BUY",
+                        "entry": current_price,
+                        "sl": prev_st
+                    }
+
+                    send_telegram(f"""
+BUY (CALL) {symbol}
+Entry: {round(current_price,2)}
+ST: {round(prev_st,2)}
+Diff: {round(diff,2)}
+""")
+
+            # ================= SELL =================
+            elif prev_close < prev_st and current_price >= prev_close:
+
+                if diff <= threshold:
+                    open_trades[symbol] = {
+                        "type": "SELL",
+                        "entry": current_price,
+                        "sl": prev_st
+                    }
+
+                    send_telegram(f"""
+SELL (PUT) {symbol}
+Entry: {round(current_price,2)}
+ST: {round(prev_st,2)}
+Diff: {round(diff,2)}
+""")
 
         except Exception as e:
             print("ENTRY ERROR:", e)
