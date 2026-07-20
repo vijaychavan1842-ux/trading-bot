@@ -65,7 +65,60 @@ def rsi_tv(close, period=14):
     avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
+    check_rsi_modes(symbol, rsi_15, rsi_1h, price)
 
+# ================= RSI TOGGLE STRATEGIES =================
+def check_rsi_modes(symbol, rsi_15, rsi_1h, price):
+
+    prev_rsi = rsi_15.iloc[-2]
+    curr_rsi = rsi_15.iloc[-1]
+
+    # ================= AGGRESSIVE =================
+    if rsi_1h.iloc[-1] > 55:
+
+        # BUY
+        if prev_rsi < 58 and curr_rsi > prev_rsi:
+            send_telegram(f"""
+🔥 AGGRESSIVE BUY
+{symbol}
+RSI: {round(prev_rsi,2)} → {round(curr_rsi,2)}
+Price: {round(price,2)}
+""")
+
+    if rsi_1h.iloc[-1] < 45:
+
+        # SELL
+        if prev_rsi > 42 and curr_rsi < prev_rsi:
+            send_telegram(f"""
+🔥 AGGRESSIVE SELL
+{symbol}
+RSI: {round(prev_rsi,2)} → {round(curr_rsi,2)}
+Price: {round(price,2)}
+""")
+
+    # ================= SAFE =================
+    if rsi_1h.iloc[-1] > 65:
+
+        # BUY
+        if prev_rsi < 50 and curr_rsi > prev_rsi:
+            send_telegram(f"""
+🛡️ SAFE BUY
+{symbol}
+RSI: {round(prev_rsi,2)} → {round(curr_rsi,2)}
+Price: {round(price,2)}
+""")
+
+    if rsi_1h.iloc[-1] < 35:
+
+        # SELL
+        if prev_rsi > 50 and curr_rsi < prev_rsi:
+            send_telegram(f"""
+🛡️ SAFE SELL
+{symbol}
+RSI: {round(prev_rsi,2)} → {round(curr_rsi,2)}
+Price: {round(price,2)}
+""")
+            
 # ================= GLOBAL NEWS =================
 def get_global_data():
     try:
