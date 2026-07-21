@@ -27,20 +27,43 @@ def is_market_open():
     now = now_ist()
     return now.weekday() < 5 and now.replace(hour=9, minute=15) <= now <= now.replace(hour=23, minute=30)
 
-# ================= SUPER TREND =================
+# ================= SUPER TREND (TRADINGVIEW STYLE) =================
 def supertrend(df, period=7, multiplier=3):
+    df = df.copy()
+
+    df['TR'] = pd.concat([
+        df['High'] - df['Low'],
+        abs(df['High'] - df['Close'].shift()),
+        abs(df['Low'] - df['Close'].shift())
+    ], axis=1).max(axis=1)
+
+    df['ATR'] = df['TR'].rolling(period).mean()
+
     hl2 = (df['High'] + df['Low']) / 2
-    atr = df['High'].rolling(period).max() - df['Low'].rolling(period).min()
-    upper = hl2 + multiplier * atr
-    lower = hl2 - multiplier * atr
+    upperband = hl2 + multiplier * df['ATR']
+    lowerband = hl2 - multiplier * df['ATR']
+
+    final_upper = upperband.copy()
+    final_lower = lowerband.copy()
+
+    for i in range(1, len(df)):
+        if upperband[i] < final_upper[i-1] or df['Close'][i-1] > final_upper[i-1]:
+            final_upper[i] = upperband[i]
+        else:
+            final_upper[i] = final_upper[i-1]
+
+        if lowerband[i] > final_lower[i-1] or df['Close'][i-1] < final_lower[i-1]:
+            final_lower[i] = lowerband[i]
+        else:
+            final_lower[i] = final_lower[i-1]
 
     st = pd.Series(index=df.index)
 
-    for i in range(len(df)):
-        if df['Close'][i] > upper[i]:
-            st[i] = lower[i]
+    for i in range(1, len(df)):
+        if df['Close'][i] <= final_upper[i]:
+            st[i] = final_upper[i]
         else:
-            st[i] = upper[i]
+            st[i] = final_lower[i]
 
     return st
 
@@ -49,14 +72,11 @@ symbols = {
     "^NSEI": 15,
     "^NSEBANK": 80,
 
-    # STOCKS
-    "RELIANCE.NS": 8, "TCS.NS": 8, "HDFCBANK.NS": 8, "ICICIBANK.NS": 8,
-    "INFY.NS": 8, "ITC.NS": 8, "SBIN.NS": 8, "LT.NS": 8,
+    "RELIANCE.NS": 8,
+    "TCS.NS": 8,
+    "HDFCBANK.NS": 8,
 
-    # COMMODITY (Yahoo symbols)
-    "GC=F": 10,   # GOLD
-    "SI=F": 5,    # SILVER
-    "CL=F": 1     # CRUDE
+    "GC=F": 10  # test
 }
 
 open_trades = {}
@@ -82,41 +102,36 @@ def run_bot():
             close = df["Close"]
             st = supertrend(df)
 
-            prev_close = close.iloc[-2]
             prev_st = st.iloc[-2]
-
-            # ✅ REAL CMP (LIVE)
-            ticker = yf.Ticker(symbol)
-            current_price = ticker.history(period="1d", interval="1m")["Close"].iloc[-1]
+            current_price = close.iloc[-1]
 
             diff = abs(current_price - prev_st)
 
             if symbol in open_trades:
                 continue
 
-            # ================= ENTRY (NO DIRECTION CONDITION) =================
+            # ===== YOUR EXACT ENTRY LOGIC =====
             if diff <= threshold:
 
-                trade_type = "BUY" if prev_close > prev_st else "SELL"
+                # BUY (CALL)
+                if current_price > prev_st:
+                    open_trades[symbol] = {
+                        "type": "BUY",
+                        "entry": current_price,
+                        "sl": prev_st
+                    }
 
-                open_trades[symbol] = {
-                    "type": trade_type,
-                    "entry": current_price,
-                    "sl": prev_st
-                }
+                    send_telegram(f"🟢 BUY {symbol} @ {round(current_price,2)}")
 
-                send_telegram(f"""
-━━━━━━━━━━━━━━━
-🔥 ENTRY SIGNAL
+                # SELL (PUT)
+                else:
+                    open_trades[symbol] = {
+                        "type": "SELL",
+                        "entry": current_price,
+                        "sl": prev_st
+                    }
 
-Symbol: {symbol}
-Type: {trade_type}
-Entry: {round(current_price,2)}
-ST: {round(prev_st,2)}
-Diff: {round(diff,2)}
-
-━━━━━━━━━━━━━━━
-""")
+                    send_telegram(f"🔴 SELL {symbol} @ {round(current_price,2)}")
 
         except Exception as e:
             print("ENTRY ERROR:", e)
@@ -130,39 +145,37 @@ def check_exit():
             close = df["Close"]
             st = supertrend(df)
 
-            prev_close = close.iloc[-2]
-            prev_st = st.iloc[-2]
-
-            ticker = yf.Ticker(symbol)
-            current_price = ticker.history(period="1d", interval="1m")["Close"].iloc[-1]
+            last_close = close.iloc[-1]
+            last_st = st.iloc[-1]
+            current_price = close.iloc[-1]
 
             trade = open_trades[symbol]
             entry = trade["entry"]
 
-            # ================= SL (CANDLE CLOSE BASED) =================
-            if trade["type"] == "BUY" and prev_close < prev_st:
+            # ===== STOPLOSS (CANDLE CLOSE) =====
+            if trade["type"] == "BUY" and last_close < last_st:
                 pnl = current_price - entry
                 send_telegram(f"❌ SL BUY {symbol} PnL:{round(pnl,2)}")
-                log_trade(symbol,"BUY",entry,prev_st,current_price,pnl,"SL")
+                log_trade(symbol,"BUY",entry,last_st,current_price,pnl,"SL")
                 del open_trades[symbol]
 
-            elif trade["type"] == "SELL" and prev_close > prev_st:
+            elif trade["type"] == "SELL" and last_close > last_st:
                 pnl = entry - current_price
                 send_telegram(f"❌ SL SELL {symbol} PnL:{round(pnl,2)}")
-                log_trade(symbol,"SELL",entry,prev_st,current_price,pnl,"SL")
+                log_trade(symbol,"SELL",entry,last_st,current_price,pnl,"SL")
                 del open_trades[symbol]
 
-            # ================= TARGET (CMP BASED) =================
+            # ===== TARGET (CMP BASED) =====
             elif trade["type"] == "BUY" and current_price >= entry * 1.10:
                 pnl = current_price - entry
                 send_telegram(f"🎯 TARGET BUY {symbol} PnL:{round(pnl,2)}")
-                log_trade(symbol,"BUY",entry,prev_st,current_price,pnl,"TARGET")
+                log_trade(symbol,"BUY",entry,last_st,current_price,pnl,"TARGET")
                 del open_trades[symbol]
 
             elif trade["type"] == "SELL" and current_price <= entry * 0.90:
                 pnl = entry - current_price
                 send_telegram(f"🎯 TARGET SELL {symbol} PnL:{round(pnl,2)}")
-                log_trade(symbol,"SELL",entry,prev_st,current_price,pnl,"TARGET")
+                log_trade(symbol,"SELL",entry,last_st,current_price,pnl,"TARGET")
                 del open_trades[symbol]
 
         except Exception as e:
@@ -172,11 +185,12 @@ def check_exit():
 def export_csv():
     now = now_ist()
 
-    if now.hour == 15 and now.minute == 35:
-        os.rename("trade_log_day.csv", f"trade_log_335_{now.date()}.csv")
+    if os.path.exists("trade_log_day.csv"):
+        if now.hour == 15 and now.minute == 35:
+            os.rename("trade_log_day.csv", f"trade_log_335_{now.date()}.csv")
 
-    if now.hour == 23 and now.minute == 5:
-        os.rename("trade_log_day.csv", f"trade_log_1105_{now.date()}.csv")
+        if now.hour == 23 and now.minute == 5:
+            os.rename("trade_log_day.csv", f"trade_log_1105_{now.date()}.csv")
 
 # ================= MAIN =================
 print("🚀 BOT STARTED")
@@ -187,13 +201,10 @@ init_csv()
 while True:
     try:
         if is_market_open():
-
             run_bot()
             check_exit()
             export_csv()
-
-            time.sleep(5)   # FAST CHECK (LIVE CMP)
-
+            time.sleep(5)
         else:
             time.sleep(20)
 
