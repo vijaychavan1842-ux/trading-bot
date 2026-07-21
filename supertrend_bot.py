@@ -9,10 +9,13 @@ import os
 
 # ================= TELEGRAM =================
 def send_telegram(msg):
-    token = str(os.getenv("TOKEN")).strip()
-    chat_id = str(os.getenv("CHAT_ID")).strip()
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    requests.post(url, json={"chat_id": chat_id, "text": msg}, timeout=10)
+    try:
+        token = str(os.getenv("TOKEN")).strip()
+        chat_id = str(os.getenv("CHAT_ID")).strip()
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        requests.post(url, json={"chat_id": chat_id, "text": msg}, timeout=10)
+    except Exception as e:
+        print("Telegram Error:", e)
 
 # ================= TIME =================
 india = pytz.timezone('Asia/Kolkata')
@@ -23,10 +26,6 @@ def now_ist():
 def is_market_open():
     now = now_ist()
     return now.weekday() < 5 and now.replace(hour=9, minute=15) <= now <= now.replace(hour=15, minute=30)
-
-def is_candle_close():
-    now = now_ist()
-    return now.minute % 5 == 0 and now.second < 8
 
 # ================= SUPER TREND =================
 def supertrend(df, period=7, multiplier=3):
@@ -48,11 +47,28 @@ def supertrend(df, period=7, multiplier=3):
 
 # ================= SYMBOLS =================
 symbols = {
+    # ================= INDICES =================
     "^NSEI": 10,
-    "^NSEBANK": 20,
-    "RELIANCE.NS": 5,"TCS.NS": 5,"HDFCBANK.NS": 5,"ICICIBANK.NS": 5,
-    "INFY.NS": 5,"ITC.NS": 5,"SBIN.NS": 5,"LT.NS": 5,
-    "AXISBANK.NS": 5,"KOTAKBANK.NS": 5
+    "^NSEBANK": 30,
+
+    # ================= STOCKS (UNIQUE LIST) =================
+    "RELIANCE.NS": 8, "TCS.NS": 8, "HDFCBANK.NS": 8, "ICICIBANK.NS": 8,
+    "INFY.NS": 8, "ITC.NS": 8, "SBIN.NS": 8, "LT.NS": 8,
+    "AXISBANK.NS": 8, "KOTAKBANK.NS": 8, "BHARTIARTL.NS": 8,
+    "ASIANPAINT.NS": 8, "MARUTI.NS": 8, "SUNPHARMA.NS": 8,
+    "TITAN.NS": 8, "ULTRACEMCO.NS": 8, "BAJFINANCE.NS": 8,
+    "HCLTECH.NS": 8, "WIPRO.NS": 8, "POWERGRID.NS": 8,
+    "NTPC.NS": 8, "ONGC.NS": 8, "COALINDIA.NS": 8,
+    "JSWSTEEL.NS": 8, "TATASTEEL.NS": 8, "HINDALCO.NS": 8,
+    "GRASIM.NS": 8, "ADANIENT.NS": 8, "ADANIPORTS.NS": 8,
+    "BAJAJFINSV.NS": 8, "BAJAJ-AUTO.NS": 8, "EICHERMOT.NS": 8,
+    "HEROMOTOCO.NS": 8, "BRITANNIA.NS": 8, "NESTLEIND.NS": 8,
+    "HINDUNILVR.NS": 8, "DABUR.NS": 8, "DIVISLAB.NS": 8,
+    "DRREDDY.NS": 8, "CIPLA.NS": 8, "APOLLOHOSP.NS": 8,
+    "INDUSINDBK.NS": 8, "SBILIFE.NS": 8, "HDFCLIFE.NS": 8,
+    "ICICIPRULI.NS": 8, "UPL.NS": 8, "TECHM.NS": 8,
+    "BANKBARODA.NS": 8, "PNB.NS": 8, "FEDERALBNK.NS": 8,
+    "IDFCFIRSTB.NS": 8, "AUBANK.NS": 8, "BANDHANBNK.NS": 8
 }
 
 open_trades = {}
@@ -69,7 +85,7 @@ def log_trade(symbol, ttype, entry, sl, exit_price, pnl, reason):
         writer = csv.writer(f)
         writer.writerow([datetime.now(), symbol, ttype, entry, sl, exit_price, pnl, reason])
 
-# ================= ENTRY (UPDATED OPTION C) =================
+# ================= ENTRY =================
 def run_bot():
     for symbol, threshold in symbols.items():
         try:
@@ -81,15 +97,14 @@ def run_bot():
             prev_close = close.iloc[-2]
             prev_st = st.iloc[-2]
 
-            current_price = close.iloc[-1]   # live candle
+            current_price = close.iloc[-1]
             diff = abs(current_price - prev_st)
 
             if symbol in open_trades:
                 continue
 
             # ================= BUY =================
-            if prev_close > prev_st and current_price <= prev_close:
-
+            if prev_close > prev_st and current_price < prev_close:
                 if diff <= threshold:
                     open_trades[symbol] = {
                         "type": "BUY",
@@ -98,15 +113,15 @@ def run_bot():
                     }
 
                     send_telegram(f"""
-BUY (CALL) {symbol}
+🟢 BUY (CALL)
+{symbol}
 Entry: {round(current_price,2)}
 ST: {round(prev_st,2)}
 Diff: {round(diff,2)}
 """)
 
             # ================= SELL =================
-            elif prev_close < prev_st and current_price >= prev_close:
-
+            elif prev_close < prev_st and current_price > prev_close:
                 if diff <= threshold:
                     open_trades[symbol] = {
                         "type": "SELL",
@@ -115,7 +130,8 @@ Diff: {round(diff,2)}
                     }
 
                     send_telegram(f"""
-SELL (PUT) {symbol}
+🔴 SELL (PUT)
+{symbol}
 Entry: {round(current_price,2)}
 ST: {round(prev_st,2)}
 Diff: {round(diff,2)}
@@ -143,13 +159,13 @@ def check_exit():
 
                 if prev_close < prev_st:
                     pnl = prev_close - entry
-                    send_telegram(f"SL BUY {symbol} PnL:{round(pnl,2)}")
+                    send_telegram(f"❌ SL BUY {symbol} PnL:{round(pnl,2)}")
                     log_trade(symbol,"BUY",entry,prev_st,prev_close,pnl,"SL")
                     del open_trades[symbol]
 
                 elif prev_close >= entry * 1.10:
                     pnl = prev_close - entry
-                    send_telegram(f"TARGET BUY {symbol} PnL:{round(pnl,2)}")
+                    send_telegram(f"✅ TARGET BUY {symbol} PnL:{round(pnl,2)}")
                     log_trade(symbol,"BUY",entry,prev_st,prev_close,pnl,"TARGET")
                     del open_trades[symbol]
 
@@ -157,13 +173,13 @@ def check_exit():
 
                 if prev_close > prev_st:
                     pnl = entry - prev_close
-                    send_telegram(f"SL SELL {symbol} PnL:{round(pnl,2)}")
+                    send_telegram(f"❌ SL SELL {symbol} PnL:{round(pnl,2)}")
                     log_trade(symbol,"SELL",entry,prev_st,prev_close,pnl,"SL")
                     del open_trades[symbol]
 
                 elif prev_close <= entry * 0.90:
                     pnl = entry - prev_close
-                    send_telegram(f"TARGET SELL {symbol} PnL:{round(pnl,2)}")
+                    send_telegram(f"✅ TARGET SELL {symbol} PnL:{round(pnl,2)}")
                     log_trade(symbol,"SELL",entry,prev_st,prev_close,pnl,"TARGET")
                     del open_trades[symbol]
 
@@ -176,20 +192,15 @@ send_telegram("✅ SUPER TREND BOT LIVE")
 
 init_csv()
 
-last_run = None
-
 while True:
     try:
-        if is_market_open() and is_candle_close():
+        if is_market_open():
 
-            now = now_ist()
+            run_bot()
+            check_exit()
 
-            if last_run != now.minute:
-                run_bot()
-                check_exit()
-                last_run = now.minute
+            time.sleep(8)   # LIVE monitoring
 
-            time.sleep(5)
         else:
             time.sleep(20)
 
