@@ -96,7 +96,7 @@ symbols = {
     "RELIANCE.NS": 8,
     "TCS.NS": 8,
     "HDFCBANK.NS": 8,
-    "GC=F": 10  # test
+    "GC=F": 600  # test
 }
 
 open_trades = {}  # {symbol: {"type": "BUY"/"SELL", "entry": float, "sl": float}}
